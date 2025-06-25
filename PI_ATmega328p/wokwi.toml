@@ -1,0 +1,4 @@
+[wokwi]
+version = "1.0" 
+firmware = ".pio/build/feather328p/firmware.hex"
+elf = ".pio/build/feather328p/firmware.elf"
