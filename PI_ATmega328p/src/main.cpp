@@ -1,96 +1,86 @@
-#include <Arduino.h>
-// Example testing sketch for various DHT humidity/temperature sensors
-// Written by ladyada, public domain
+#include <avr/io.h>
+#include <avr/interrupt.h>
 
-// REQUIRES the following Arduino libraries:
-// - DHT Sensor Library: https://github.com/adafruit/DHT-sensor-library
-// - Adafruit Unified Sensor Lib: https://github.com/adafruit/Adafruit_Sensor
-#include<Wire.h>
-#include "DHT.h"
-#include <LiquidCrystal_I2C.h>
+enum class Estado {
+    ESTADO_0,
+    ESTADO_1,
+    ESTADO_2
+};
 
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+volatile Estado estadoActual = Estado::ESTADO_0;
 
+// Actualiza LEDs según estado
+void mostrarEstado() {
+    PORTB &= ~((1 << PB0) | (1 << PB1) | (1 << PB2)); // Apaga LEDs
 
-#define DHTPIN 8     // Digital pin connected to the DHT sensor
-// Feather HUZZAH ESP8266 note: use pins 3, 4, 5, 12, 13 or 14 --
-// Pin 15 can work but DHT must be disconnected during program upload.
-
-// Uncomment whatever type you're using!
-//#define DHTTYPE DHT11   // DHT 11
-#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
-//#define DHTTYPE DHT21   // DHT 21 (AM2301)
-
-// Connect pin 1 (on the left) of the sensor to +5V
-// NOTE: If using a board with 3.3V logic like an Arduino Due connect pin 1
-// to 3.3V instead of 5V!
-// Connect pin 2 of the sensor to whatever your DHTPIN is
-// Connect pin 3 (on the right) of the sensor to GROUND (if your sensor has 3 pins)
-// Connect pin 4 (on the right) of the sensor to GROUND and leave the pin 3 EMPTY (if your sensor has 4 pins)
-// Connect a 10K resistor from pin 2 (data) to pin 1 (power) of the sensor
-
-// Initialize DHT sensor.
-// Note that older versions of this library took an optional third parameter to
-// tweak the timings for faster processors.  This parameter is no longer needed
-// as the current DHT reading algorithm adjusts itself to work on faster procs.
-DHT dht(DHTPIN, DHTTYPE);
-
-void setup() {
-  Serial.begin(9600);
-  Serial.println(F("DHTxx test!"));
-  lcd.init();        
-  lcd.backlight();   
-
-
-  dht.begin();
+    switch (estadoActual) {
+        case Estado::ESTADO_0:
+            PORTB |= (1 << PB0);
+            
+            break;
+        case Estado::ESTADO_1:
+            PORTB |= (1 << PB1);
+            
+            break;
+        case Estado::ESTADO_2:
+            PORTB |= (1 << PB2);
+            
+            break;
+    }
 }
 
-void loop() {
-  // Wait a few seconds between measurements.
-  // lcd.setCursor(0, 0);
-  // lcd.print("Temp & Humidity");
-  
-  delay(2000);
+// Función para retardos simples (aproximados)
+void retardo_software_ms(uint16_t ms) {
+    // Este retardo depende del reloj del micro y no es preciso.
+    for (uint16_t i = 0; i < ms; i++) {
+        for (volatile uint16_t j = 0; j < 1000; j++) {
+            asm volatile ("nop");
+        }
+    }
+}
 
-  // Reading temperature or humidity takes about 250 milliseconds!
-  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-  float h = dht.readHumidity();
-  // Read temperature as Celsius (the default)
-  float t = dht.readTemperature();
-  // Read temperature as Fahrenheit (isFahrenheit = true)
-  float f = dht.readTemperature(true);
+ISR(INT0_vect) {
+    retardo_software_ms(1000);  // debounce simple
 
-  // Check if any reads failed and exit early (to try again).
-  if (isnan(h) || isnan(t) || isnan(f)) {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print (F("Failed to read from DHT sensor!"));
-    delay(2000);
-   // Serial.println(F("Failed to read from DHT sensor!"));
-    return;
-  }
+    // Cambiar estado cíclicamente
+    switch (estadoActual) {
+        case Estado::ESTADO_0:
+            estadoActual = Estado::ESTADO_1;
+            break;
+        case Estado::ESTADO_1:
+            estadoActual = Estado::ESTADO_2;
+            break;
+        case Estado::ESTADO_2:
+            estadoActual = Estado::ESTADO_0;
+            break;
+    }
 
-  // Compute heat index in Fahrenheit (the default)
-  float hif = dht.computeHeatIndex(f, h);
-  // Compute heat index in Celsius (isFahreheit = false)
-  float hic = dht.computeHeatIndex(t, h, false);
+    mostrarEstado();
+}
 
-  Serial.print(F("Humidity: "));
-  Serial.print(h);
+int main(void) {
+    cli(); // Deshabilitar interrupciones
 
-  lcd.setCursor(0, 0);
-  lcd.print("humidity");
-  lcd.print (h);
-  lcd.print("%");
+    // Configurar PB0, PB1, PB2 como salidas (pines 8,9,10 Arduino)
+    DDRB |= (1 << PB0) | (1 << PB1) | (1 << PB2);
+    PORTB &= ~((1 << PB0) | (1 << PB1) | (1 << PB2));
 
-  Serial.print(F("%  Temperature: "));
-  Serial.print(t);
-  
+    // Configurar PD2 (INT0) como entrada con pull-up
+    DDRD &= ~(1 << PD2);
+    PORTD |= (1 << PD2);
 
-  lcd.setCursor(0, 1);
-  lcd.print("Temp: ");
-  lcd.print (t);
-  //lcd.print("temperature");
+    // Configurar interrupción INT0 en flanco de bajada
+    EICRA |= (1 << ISC01);
+    EICRA &= ~(1 << ISC00);
+    EIMSK |= (1 << INT0);
 
+    mostrarEstado();
 
+    sei(); // Habilitar interrupciones globales
+
+    while (1) {
+        // Aquí nada: todo se maneja en ISR
+    }
+
+    return 0;
 }
