@@ -1,7 +1,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include <math.h>
 #include <LiquidCrystal_I2C.h>
+#include <math.h>
 #include <Arduino.h>
 
 enum class Estado {
@@ -11,9 +11,10 @@ enum class Estado {
 };
 
 struct EstadoRetorno {
-  int valor;
+  float valor;           // Usa float para permitir decimales
   const char* texto;
 };
+
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 volatile Estado estadoActual = Estado::ESTADO_0;
@@ -157,23 +158,18 @@ void setup() {
 }
 
 void loop() {
-//   float distancia;
-  
-  // distancia = measuring();
+  // float distancia;
+
   if (!(PIND & (1 << PD3))) {
-    // PORTD |= (1 << PD6);
     estado = estadoAnterior;
   } else {
     estado = measuring();
     estadoAnterior = estado;
   }
- 
-  EstadoRetorno res = mostrarEstado();
-  int numero = res.valor;
-  const char* unidad = res.texto;
 
-  mostrarDistancia(estado*numero, unidad );
+  EstadoRetorno res = mostrarEstado();
+
+  mostrarDistancia(estado * res.valor, res.texto); // conversión correcta
   delay(500);
- 
-  // No hace nada, interrupciones se encargan de todo
 }
+
